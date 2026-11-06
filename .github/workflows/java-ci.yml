@@ -21,3 +21,7 @@ jobs:
           cache: maven
       - name: Build JAR
         run: mvn --batch-mode --no-transfer-progress package
+      - name: Compile validation tests
+        run: mkdir -p build && javac -Xlint:all -d build main/java/com/dirbrute/DirBrute.java tests/DirBruteValidationTest.java
+      - name: Run validation tests
+        run: java -cp build DirBruteValidationTest
