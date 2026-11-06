@@ -3,7 +3,7 @@
 echo "[*] Compiling DirBrute..."
 mkdir -p out
 
-javac -d out src/main/java/com/dirbrute/DirBrute.java
+javac -d out main/java/com/dirbrute/DirBrute.java
 
 if [ $? -ne 0 ]; then
     echo "[!] Compilation failed."
