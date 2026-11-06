@@ -1,5 +1,15 @@
 # 🔍 DirBrute — Directory Brute Force Tool
 
+
+## Get this repository
+
+Clone the current project (this repository's canonical GitHub URL), then follow the installation and usage steps below.
+
+```bash
+git clone https://github.com/cyberworlduniversity/DirBrute.git
+cd DirBrute
+```
+
 > **For authorized security testing and CTF challenges only.**  
 > Never use this tool against systems you do not have explicit written permission to test.
 
