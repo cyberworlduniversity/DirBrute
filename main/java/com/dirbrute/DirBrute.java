@@ -56,7 +56,7 @@ public class DirBrute {
             if (uri.getHost() == null || uri.getUserInfo() != null ||
                     !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) ||
                     uri.getRawQuery() != null || uri.getRawFragment() != null ||
-                    uri.getPort() > 65535) {
+                    uri.getPort() == 0 || uri.getPort() > 65535) {
                 throw new IllegalArgumentException("Target must be a valid HTTP(S) URL without credentials, query, or fragment.");
             }
         } catch (URISyntaxException e) {
@@ -119,8 +119,9 @@ public class DirBrute {
 
     private void checkPath(String path) {
         String urlStr = baseUrl + path;
+        HttpURLConnection conn = null;
         try {
-            HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
+            conn = (HttpURLConnection) new URL(urlStr).openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(timeout);
             conn.setReadTimeout(timeout);
@@ -129,8 +130,8 @@ public class DirBrute {
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DirBrute/1.0");
 
             int code = conn.getResponseCode();
+            String location = conn.getHeaderField("Location");
             scanned.incrementAndGet();
-            conn.disconnect();
 
             if (code == 200) {
                 String msg = GREEN + "[200 FOUND]   " + RESET + urlStr;
@@ -138,7 +139,6 @@ public class DirBrute {
                 results.add("[200] " + urlStr);
                 found.incrementAndGet();
             } else if (code == 301 || code == 302) {
-                String location = conn.getHeaderField("Location");
                 String msg = YELLOW + "[" + code + " REDIRECT] " + RESET + urlStr
                            + YELLOW + " -> " + location + RESET;
                 System.out.println(msg);
@@ -150,10 +150,10 @@ public class DirBrute {
                 results.add("[403] " + urlStr);
                 found.incrementAndGet();
             }
-            // 404 and others are silently ignored
-
         } catch (Exception ignored) {
             scanned.incrementAndGet();
+        } finally {
+            if (conn != null) conn.disconnect();
         }
     }
 
