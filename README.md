@@ -184,3 +184,51 @@ The author takes no responsibility for misuse of this tool.
 
 **hemanathan115**  
 GitHub: [github.com/hemanathan115](https://github.com/hemanathan115)
+
+
+## Repository Quick Start
+
+Clone the canonical repository:
+
+```bash
+git clone https://github.com/cyberworlduniversity/DirBrute.git
+cd DirBrute
+```
+
+### Requirements and installation
+
+- Install JDK 11+ (JDK 8+ for this standalone port scanner) and Maven where applicable.
+
+```bash
+Maven resolves the dependencies declared in pom.xml.
+```
+
+### Build / run
+
+```bash
+mvn --batch-mode package
+```
+
+Run the packaged application using the main class and launch instructions in the project scripts or Maven configuration.
+
+### Validation
+
+```bash
+mvn --batch-mode test
+```
+
+Directory discovery requests must be limited to systems and scopes you are authorized to test.
+
+### Program flow
+
+```mermaid
+flowchart TD
+    A[Start] --> B[Initialize application]
+    B --> C[Select interface or input]
+    C --> D{Ready to process?}
+    D -- No --> E[Report setup or input issue]
+    D -- Yes --> F[Run DirBrute operation]
+    F --> G[Summarize findings]
+    G --> H[Display results and exit]
+    E --> H
+```
