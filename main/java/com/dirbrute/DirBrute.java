@@ -49,6 +49,10 @@ public class DirBrute {
         }
 
         String candidate = baseUrl.trim();
+        if (candidate.matches("(?i)^[a-z][a-z0-9+.-]*:.*") &&
+                !candidate.matches("(?i)^https?://.*")) {
+            throw new IllegalArgumentException("Only HTTP and HTTPS targets are supported.");
+        }
         if (!candidate.matches("(?i)^https?://.*")) candidate = "https://" + candidate;
         try {
             URI uri = new URI(candidate);
