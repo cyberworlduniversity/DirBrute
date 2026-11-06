@@ -44,12 +44,12 @@ chmod +x build.sh
 build.bat
 ```
 
-### Manual (any OS)
+### Maven (any OS)
 ```bash
-mkdir out
-javac -d out src/main/java/com/dirbrute/DirBrute.java
-jar cfm DirBrute.jar manifest.txt -C out .
+mvn --batch-mode package
 ```
+
+The JAR is created in `target/`. You can also use the included `build.sh` or `build.bat` scripts.
 
 ---
 
@@ -129,7 +129,7 @@ java -jar DirBrute.jar http://example.com/api/ wordlists/common.txt 30 2000
 
 ```
 DirBrute/
-├── src/
+├── main/
 │   └── main/java/com/dirbrute/
 │       └── DirBrute.java       # Main scanner
 ├── wordlists/
