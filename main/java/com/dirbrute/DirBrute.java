@@ -2,6 +2,8 @@ package com.dirbrute;
 
 import java.io.*;
 import java.net.*;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -20,6 +22,10 @@ public class DirBrute {
     static final String CYAN   = "\u001B[36m";
     static final String BOLD   = "\u001B[1m";
 
+    private static final int MAX_THREADS = 200;
+    private static final int MAX_TIMEOUT_MS = 60000;
+    private static final int MAX_WORDLIST_ENTRIES = 50000;
+
     private final String baseUrl;
     private final String wordlistPath;
     private final int threads;
@@ -29,8 +35,40 @@ public class DirBrute {
     private final List<String> results   = Collections.synchronizedList(new ArrayList<>());
 
     public DirBrute(String baseUrl, String wordlistPath, int threads, int timeout) {
-        this.baseUrl      = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
-        this.wordlistPath = wordlistPath;
+        if (baseUrl == null || baseUrl.trim().isEmpty()) {
+            throw new IllegalArgumentException("Target URL must not be empty.");
+        }
+        if (wordlistPath == null || wordlistPath.trim().isEmpty()) {
+            throw new IllegalArgumentException("Wordlist path must not be empty.");
+        }
+        if (threads < 1 || threads > MAX_THREADS) {
+            throw new IllegalArgumentException("Threads must be between 1 and " + MAX_THREADS + ".");
+        }
+        if (timeout < 1 || timeout > MAX_TIMEOUT_MS) {
+            throw new IllegalArgumentException("Timeout must be between 1 and " + MAX_TIMEOUT_MS + " ms.");
+        }
+
+        String candidate = baseUrl.trim();
+        if (candidate.matches("(?i)^[a-z][a-z0-9+.-]*:.*") &&
+                !candidate.matches("(?i)^https?://.*")) {
+            throw new IllegalArgumentException("Only HTTP and HTTPS targets are supported.");
+        }
+        if (!candidate.matches("(?i)^https?://.*")) candidate = "https://" + candidate;
+        try {
+            URI uri = new URI(candidate);
+            String scheme = uri.getScheme();
+            if (uri.getHost() == null || uri.getUserInfo() != null ||
+                    !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) ||
+                    uri.getRawQuery() != null || uri.getRawFragment() != null ||
+                    uri.getPort() == 0 || uri.getPort() > 65535) {
+                throw new IllegalArgumentException("Target must be a valid HTTP(S) URL without credentials, query, or fragment.");
+            }
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException("Target URL is invalid.", e);
+        }
+
+        this.baseUrl      = candidate.endsWith("/") ? candidate : candidate + "/";
+        this.wordlistPath = wordlistPath.trim();
         this.threads      = threads;
         this.timeout      = timeout;
     }
@@ -46,15 +84,38 @@ public class DirBrute {
 
         long start = System.currentTimeMillis();
         ExecutorService pool = Executors.newFixedThreadPool(threads);
+        int batchSize = threads * 4;
 
-        for (String word : words) {
-            if (word.isBlank() || word.startsWith("#")) continue;
-            String path = word.trim();
-            pool.submit(() -> checkPath(path));
+        try {
+            // Keep only a small bounded batch of tasks queued at any one time.
+            for (int offset = 0; offset < words.size(); offset += batchSize) {
+                List<Future<?>> batch = new ArrayList<>();
+                int limit = Math.min(offset + batchSize, words.size());
+                for (int i = offset; i < limit; i++) {
+                    String word = words.get(i);
+                    if (word.isBlank() || word.startsWith("#")) continue;
+                    String path = word.trim();
+                    batch.add(pool.submit(() -> checkPath(path)));
+                }
+                for (Future<?> task : batch) {
+                    try {
+                        task.get();
+                    } catch (ExecutionException ignored) {
+                        // A single failed request must not abort the complete scan.
+                    }
+                }
+            }
+        } catch (InterruptedException e) {
+            pool.shutdownNow();
+            Thread.currentThread().interrupt();
+            throw e;
+        } finally {
+            pool.shutdown();
         }
-
-        pool.shutdown();
-        pool.awaitTermination(1, TimeUnit.HOURS);
+        if (!pool.awaitTermination(1, TimeUnit.HOURS)) {
+            pool.shutdownNow();
+            throw new IllegalStateException("Scan worker shutdown timed out.");
+        }
 
         long elapsed = System.currentTimeMillis() - start;
         printSummary(words.size(), elapsed);
@@ -62,8 +123,9 @@ public class DirBrute {
 
     private void checkPath(String path) {
         String urlStr = baseUrl + path;
+        HttpURLConnection conn = null;
         try {
-            HttpURLConnection conn = (HttpURLConnection) new URL(urlStr).openConnection();
+            conn = (HttpURLConnection) new URL(urlStr).openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(timeout);
             conn.setReadTimeout(timeout);
@@ -72,8 +134,8 @@ public class DirBrute {
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) DirBrute/1.0");
 
             int code = conn.getResponseCode();
+            String location = conn.getHeaderField("Location");
             scanned.incrementAndGet();
-            conn.disconnect();
 
             if (code == 200) {
                 String msg = GREEN + "[200 FOUND]   " + RESET + urlStr;
@@ -81,7 +143,6 @@ public class DirBrute {
                 results.add("[200] " + urlStr);
                 found.incrementAndGet();
             } else if (code == 301 || code == 302) {
-                String location = conn.getHeaderField("Location");
                 String msg = YELLOW + "[" + code + " REDIRECT] " + RESET + urlStr
                            + YELLOW + " -> " + location + RESET;
                 System.out.println(msg);
@@ -93,10 +154,10 @@ public class DirBrute {
                 results.add("[403] " + urlStr);
                 found.incrementAndGet();
             }
-            // 404 and others are silently ignored
-
         } catch (Exception ignored) {
             scanned.incrementAndGet();
+        } finally {
+            if (conn != null) conn.disconnect();
         }
     }
 
@@ -104,7 +165,12 @@ public class DirBrute {
         List<String> lines = new ArrayList<>();
         try (BufferedReader br = new BufferedReader(new FileReader(path))) {
             String line;
-            while ((line = br.readLine()) != null) lines.add(line);
+            while ((line = br.readLine()) != null) {
+                if (lines.size() >= MAX_WORDLIST_ENTRIES) {
+                    throw new IOException("Wordlist exceeds the " + MAX_WORDLIST_ENTRIES + "-entry safety limit.");
+                }
+                lines.add(line);
+            }
         }
         return lines;
     }
